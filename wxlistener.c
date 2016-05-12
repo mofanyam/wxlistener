@@ -10,6 +10,8 @@
 #include <errno.h>
 #include <sys/time.h>
 #include <sys/shm.h>
+#define __USE_GNU
+#include <sched.h>
 
 
 #define err(fmt,...) fprintf(stderr, "[pid:%d, line: %3d] "fmt" %s\n", getpid(), __LINE__, ##__VA_ARGS__, strerror(errno))
@@ -77,6 +79,11 @@ pid_t spawn_worker(struct worker_s* worker) {
         err("fork");
         return -1;
     } else if (pid == 0) { // child
+        cpu_set_t mask;
+        CPU_ZERO(&mask);
+        CPU_SET(worker->worker_id, &mask);
+        sched_setaffinity(getpid(), sizeof(mask), &mask);
+
         struct worker_s* wks= listener->workers;
         int wkid = worker->worker_id;
         while (wkid--) {
