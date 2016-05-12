@@ -77,6 +77,12 @@ pid_t spawn_worker(struct worker_s* worker) {
         err("fork");
         return -1;
     } else if (pid == 0) { // child
+        struct worker_s* wks= listener->workers;
+        int wkid = worker->worker_id;
+        while (wkid--) {
+            close(wks[wkid].listen_fd);
+        }
+
         char* arg[] = {listener->argv[3], NULL};
 
         char envlistenfd[64];
@@ -134,22 +140,22 @@ int setup_workers(struct ev_loop* loop, struct listener_s* listener) {
 #endif
 
     pid_t pid;
-    int _worker_count = listener->worker_count;
+    int i;
     struct worker_s* workers = listener->workers;
-    for (;_worker_count--;) {
+    for (i = 0; i < listener->worker_count; i++) {
 #ifdef SO_REUSEPORT
         listen_fd = start_listen(ip, port);
 #endif
-        workers[_worker_count].listen_fd = listen_fd;
-        workers[_worker_count].worker_id = _worker_count;
-        workers[_worker_count].listener = listener;
-        pid = spawn_worker(&workers[_worker_count]);
+        workers[i].listen_fd = listen_fd;
+        workers[i].worker_id = i;
+        workers[i].listener = listener;
+        pid = spawn_worker(&workers[i]);
         if (pid < 0) {
             return -1;
         }
-        workers[_worker_count].pid = pid;
-        ev_child_init(&workers[_worker_count].cwatcher, exit_cb, pid, 0);
-        ev_child_start(loop, &workers[_worker_count].cwatcher);
+        workers[i].pid = pid;
+        ev_child_init(&workers[i].cwatcher, exit_cb, pid, 0);
+        ev_child_start(loop, &workers[i].cwatcher);
     }
 
     return 0;
