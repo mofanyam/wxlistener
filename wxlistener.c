@@ -217,7 +217,7 @@ void shm_free(int shmid) {
 
 int main(int argc, char** argv) {
     if (argc < 3) {
-        printf("Usage: %s ip port [shmsize]\n", argv[0]);
+        printf("Usage: %s ip port path2worker [shmsize]\n", argv[0]);
         return EXIT_FAILURE;
     }
 
