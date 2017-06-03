@@ -60,9 +60,11 @@ int start_listen(char* ip, uint16_t port) {
     fcntl(listenfd, F_SETFL, fcntl(listenfd, F_GETFL) | O_NONBLOCK);
 
     if (bind(listenfd, (struct sockaddr*)&srvaddr, sizeof(struct sockaddr)) < 0) {
+        err("bind");
         return -1;
     }
     if (listen(listenfd, 511) < 0) {
+        err("listen");
         return -1;
     }
 
@@ -216,7 +218,7 @@ void shm_free(int shmid) {
 }
 
 int main(int argc, char** argv) {
-    if (argc < 3) {
+    if (argc < 4) {
         printf("Usage: %s ip port path2worker [shmsize]\n", argv[0]);
         return EXIT_FAILURE;
     }
