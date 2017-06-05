@@ -2,7 +2,7 @@
 libev
 
 使用:
-./wxlistener ip port path2worker shmsize
+./wxlistener ip port path2worker [workercount [shmsize]]
 
 
 向worker传递的环境变量：

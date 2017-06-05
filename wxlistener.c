@@ -118,14 +118,15 @@ void exit_cb(struct ev_loop* loop, struct ev_child* cwatcher, int status) {
     struct worker_s* worker = container_of(cwatcher, struct worker_s, cwatcher);
     ev_child_stop(loop, cwatcher);
 
-    err("worker[pid:%d] exit with status:%d, stop_moniter:%d", worker->pid, cwatcher->rstatus, worker->listener->stop_moniter);
-
     struct timeval tv;
     gettimeofday(&tv, 0);
 
     if (worker->listener->stop_moniter || 2 > ((int)tv.tv_sec - worker->starttime)) {
+        err("worker[pid:%d] exit twice in 2 second", worker->pid);
         return;
     }
+
+    err("worker[pid:%d] exit with status:%d, stop_moniter:%d", worker->pid, cwatcher->rstatus, worker->listener->stop_moniter);
 
     worker->pid = spawn_worker(worker);
     if (-1 == worker->pid) {
@@ -178,17 +179,23 @@ void signal_workers(struct listener_s* listener, int sig) {
     }
 }
 
-void listener_stop(struct ev_loop* loop, struct ev_signal* quitwatcher, int status) {
+void listener_stop_and_send_quit(struct ev_loop* loop, struct ev_signal* quitwatcher, int status) {
     struct listener_s* listener = (struct listener_s*)ev_userdata(loop);
     err("listener_stop:%d", listener->stop_moniter);
     listener->stop_moniter = 1;
     signal_workers(listener, SIGQUIT);
 }
+void listener_stop_and_send_winch(struct ev_loop* loop, struct ev_signal* quitwatcher, int status) {
+    struct listener_s* listener = (struct listener_s*)ev_userdata(loop);
+    err("listener_stop:%d", listener->stop_moniter);
+    listener->stop_moniter = 1;
+    signal_workers(listener, SIGWINCH);
+}
 
 void restart_workers(struct ev_loop* loop, struct ev_signal* hupwatcher, int status) {
     struct listener_s* listener = (struct listener_s*)ev_userdata(loop);
     listener->stop_moniter = 0;
-    signal_workers(listener, SIGQUIT);
+    signal_workers(listener, SIGWINCH);
 }
 
 int shm_alloc(key_t key, size_t size) {
@@ -231,8 +238,8 @@ int main(int argc, char** argv) {
     listener.shm_id = -1;
     listener.shm_size = -1;
 
-    if (argc > 4) {
-        listener.shm_size = atoi(argv[4]);
+    if (argc > 5) {
+        listener.shm_size = atoi(argv[5]);
         if (listener.shm_size > 0) {
             listener.shm_id = shm_alloc(0, listener.shm_size);
         }
@@ -249,18 +256,26 @@ int main(int argc, char** argv) {
 
     // setup signal handler
     struct ev_signal quitwatcher;
-    struct ev_signal hupwatcher;
-    ev_signal_init(&quitwatcher, listener_stop, SIGQUIT);
-    ev_signal_init(&hupwatcher, restart_workers, SIGHUP);
+    ev_signal_init(&quitwatcher, listener_stop_and_send_winch, SIGQUIT);
     ev_signal_start(loop, &quitwatcher);
     ev_unref(loop); // 将loop中的watchercnt--,保证不停止此watcher的情况下loop也能正常退出
+
+    struct ev_signal intwatcher;
+    ev_signal_init(&intwatcher, listener_stop_and_send_quit, SIGINT|SIGTERM);
+    ev_signal_start(loop, &intwatcher);
+    ev_unref(loop); // 将loop中的watchercnt--,保证不停止此watcher的情况下loop也能正常退出
+
+    struct ev_signal hupwatcher;
+    ev_signal_init(&hupwatcher, restart_workers, SIGHUP);
     ev_signal_start(loop, &hupwatcher);
     ev_unref(loop); // 将loop中的watchercnt--,保证不停止此watcher的情况下loop也能正常退出
 
 
     // get cpu number
     listener.worker_count = (int)sysconf(_SC_NPROCESSORS_CONF);
-
+    if (argc > 4 && atoi(argv[4]) > 0) {
+        listener.worker_count = atoi(argv[4]);
+    }
 
     // init workers
     struct worker_s workers[listener.worker_count];
@@ -276,6 +291,8 @@ int main(int argc, char** argv) {
 
     ev_ref(loop);
     ev_signal_stop(loop, &quitwatcher);
+    ev_ref(loop);
+    ev_signal_stop(loop, &intwatcher);
     ev_ref(loop);
     ev_signal_stop(loop, &hupwatcher);
 
